@@ -1,5 +1,5 @@
 import autograd.numpy as np
-from ddp import ddp
+from ddp import ddp, plot_costs
 
 
 def main():
@@ -14,10 +14,11 @@ def main():
     x_final = np.array([.0, .0, np.pi, .0])
     dt = .001  # time step
     m = 1  # control dim
+    n = 4  # state dim
 
     # Cost vars
     Q = np.diag([1, 5, 5, 3])
-    R = 1
+    R = np.array([[1]])
     terminal_scale = 2
 
     # Define functions
@@ -34,15 +35,23 @@ def main():
         return np.array([pos_vel, pos_acc, theta_vel, theta_acc])
 
     def lagr(x, u):
-        dx = (x - x_final)[np.newaxis]
+        dx = x_delta(x)
         u = u[np.newaxis]
-        return np.dot(dx.T, Q, dx) + np.dot(u.T, R, u)
+        return dx.T @ Q @ dx + u.T @ R @ u
 
     def phi(x):
-        dx = (x - x_final)[np.newaxis]
-        return terminal_scale * np.dot(dx.T, Q, dx)
+        dx = x_delta(x)
+        return terminal_scale * np.squeeze(dx.T @ Q @ dx)
 
-    u_opt, costs = ddp(x_init, m, phi, lagr, F, dt)
+    def x_delta(x):
+        dx = x - x_final
+        d_theta = np.mod(dx[2] + np.pi, 2 * np.pi) - np.pi
+        # d_theta = np.arccos(np.cos(dx[2]))
+        return np.array([[dx[0], dx[1], d_theta, dx[3]]]).T
+
+    u_opt, costs = ddp(x_init, n, m, phi, lagr, F, dt)
+    plot_costs(costs)
+
 
 if __name__ == '__main__':
     main()
