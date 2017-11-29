@@ -5,12 +5,12 @@ import sys
 import matplotlib.pyplot as plt
 
 
-def run_dynamics(x_init, x_old, u_bar, u_deltas, F, T, dt):
+def run_dynamics(u_bar, F, dt, x_init, x_old=None, u_deltas=None):
     x_bar = [x_init]
     x = x_init
-    for t in range(T):
+    for t in range(len(u_bar)):
         u = u_bar[t]
-        if u_deltas is not None:
+        if u_deltas is not None and x_old is not None:
             x_delta = x - x_old[t]
             u = u + u_deltas[t](x_delta)
         x = x + (F(x, u) * dt)
@@ -26,7 +26,7 @@ def plot_costs(costs):
 
 
 def get_lagrangians(lagr, dt):
-    L = lambda x, u, : lagr(x, u) * dt
+    L = lambda x, u,: lagr(x, u) * dt
     Lx = grad(L, 0)
     Lu = grad(L, 1)
     Lxx = jacobian(Lx, 0)
@@ -36,16 +36,15 @@ def get_lagrangians(lagr, dt):
     return L, Lx, Lu, Lxx, Lxu, Luu
 
 
-def ddp(x_init, n, m, phi, lagr, F, dt, T=1000, max_iters=100, epsilon=0.0,
+def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
         u_bar=None):
     """Runs Differential Dynamic Programming (DDP)
 
     :param x_init: initial state (np.array)
     :param n: dimension of state
     :param m: dimension of control
-    :param phi: terminal cost function
-    :param lagr: running cost function
-    :param F: dynamics function F(state, control)
+    :param cost: cost object containing terminal and running cost functions
+    :param system: system object containing dynamics function F
     :param dt: time step
     :param T: time horizon
     :param max_iters: maximum number of iterations
@@ -62,8 +61,17 @@ def ddp(x_init, n, m, phi, lagr, F, dt, T=1000, max_iters=100, epsilon=0.0,
     x_bar = None
     u_deltas = None
 
-    # Differentiation
+    # Differentiation of Terminal Cost
+    phi = cost.phi
+    phi_x = grad(phi)
+    phi_xx = jacobian(phi_x)
+
+    # Differentiation of Running Cost
+    lagr = cost.lagr
     L, Lx, Lu, Lxx, Lxu, Luu = get_lagrangians(lagr, dt)
+
+    # Differentiation of Dynamics
+    F = system.F
     Fx = jacobian(F, 0)
     Fu = jacobian(F, 1)
 
@@ -75,23 +83,27 @@ def ddp(x_init, n, m, phi, lagr, F, dt, T=1000, max_iters=100, epsilon=0.0,
     cost = sys.maxsize
     costs = []
     while cost > epsilon and iter < max_iters:
-        x_bar = run_dynamics(x_init, x_bar, u_bar, u_deltas, F, T, dt)
+
+        # Forward pass
+        x_bar = run_dynamics(u_bar, F, dt, x_init, x_bar, u_deltas)
         u_deltas = []
 
         x_final = x_bar[T]
         V = phi(x_final)
-        Vx = grad(phi)(x_final)
-        Vxx = jacobian(grad(phi))(x_final)
+        Vx = phi_x(x_final)
+        Vxx = phi_xx(x_final)
 
         cost = V
 
+        # Backward pass
         for t in range(T - 1, -1, -1):
             # Setup
             x = x_bar[t]
             u = u_bar[t]
+
             Phi_x = Phi(x, u)
             Beta_x = Beta(x, u)
-            cost += L(x, u)
+            cost = cost + L(x, u)
 
             # Compute Q's
             Q = L(x, u) + V
@@ -100,9 +112,9 @@ def ddp(x_init, n, m, phi, lagr, F, dt, T=1000, max_iters=100, epsilon=0.0,
             Qxx = Lxx(x, u) + Phi_x.T @ Vxx @ Phi_x
             Qxu = Lxu(x, u) + Phi_x.T @ Vxx @ Beta_x
             Quu = Luu(x, u) + Beta_x.T @ Vxx @ Beta_x
-
-            # Compute optimal change
             Quu_inv = np.linalg.inv(Quu)
+
+            # Compute optimal control change
             u_delta = lambda x_delta: -Quu_inv @ (Qu + Qxu.T @ x_delta)
             u_deltas.append(u_delta)
 
