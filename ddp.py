@@ -105,17 +105,17 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
             x = x_bar[t]
             u = u_bar[t]
 
-            Phi_x = Phi(x, u)
-            Beta_x = Beta(x, u)
+            Phi_now = Phi(x, u)
+            Beta_now = Beta(x, u)
             cost = cost + L(x, u)
 
             # Compute Q's
             Q = L(x, u) + V
-            Qx = Lx(x, u) + Phi_x.T @ Vx
-            Qu = Lu(x, u) + Beta_x.T @ Vx
-            Qxx = Lxx(x, u) + Phi_x.T @ Vxx @ Phi_x
-            Qxu = Lxu(x, u) + Phi_x.T @ Vxx @ Beta_x
-            Quu = Luu(x, u) + Beta_x.T @ Vxx @ Beta_x
+            Qx = Lx(x, u) + Phi_now.T @ Vx
+            Qu = Lu(x, u) + Beta_now.T @ Vx
+            Qxx = Lxx(x, u) + Phi_now.T @ Vxx @ Phi_now
+            Qxu = Lxu(x, u) + Phi_now.T @ Vxx @ Beta_now
+            Quu = Luu(x, u) + Beta_now.T @ Vxx @ Beta_now
             Quu_inv = np.linalg.inv(Quu)
 
             # Compute optimal control change

@@ -12,20 +12,21 @@ def main():
     system = CartpoleSystem(m_car, m_ball, length, g)
 
     # DDP var init
-    dt = .005  # time step
+    dt = .01  # time step
     time_horizon = 3 # in seconds
     T = int(time_horizon / dt)  # time steps horizon
     m = 1  # control dim
     n = 4  # state dim
-    x_init = np.array([.0, .0, .0, .0])
+    x_init = np.array([.0, .0, np.pi/8, .0])
     # u_bar = np.random.rand(T, m) * 10
     u_bar = np.zeros([T, m])
 
     # Define cost
-    x_final = np.array([.0, .0, np.pi, .0])
-    Q = np.diag([1, 5, 30, 10])
+    # x_final = np.array([.0, .0, np.pi, .0])
+    x_final = np.array([.0, .0, .0, .0])
+    Q = np.diag([0, 5, 20, 20])
     R = np.array([[0.1]])
-    terminal_scale = T/4
+    terminal_scale = T/10
     cost = CartpoleCost(x_final, terminal_scale, Q, R)
 
     u_opt, costs = ddp(x_init, n, m, cost, system, dt, T, max_iters=20,
