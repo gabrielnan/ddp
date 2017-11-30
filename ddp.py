@@ -5,23 +5,27 @@ import sys
 import matplotlib.pyplot as plt
 
 
-def run_dynamics(u_bar, F, dt, x_init, x_old=None, u_deltas=None):
-    x_bar = [x_init]
+def run_dynamics(u_old, F, dt, x_init, x_old=None, u_deltas=None):
+    x_new = [x_init]
+    u_new = []
     x = x_init
-    for t in range(len(u_bar)):
-        u = u_bar[t]
+    for t in range(len(u_old)):
+        u = u_old[t]
         if u_deltas is not None and x_old is not None:
             x_delta = x - x_old[t]
             u = u + u_deltas[t](x_delta)
         x = x + (F(x, u) * dt)
-        x_bar.append(x)
-    return x_bar
+        u_new.append(u)
+        x_new.append(x)
+    return np.array(x_new), np.array(u_new)
 
 
-def plot_costs(costs):
+def plot_costs(costs, filename='costs'):
+    plt.figure()
     plt.plot(costs)
     plt.ylabel('Cost')
     plt.xlabel('Iteration')
+    plt.savefig(filename)
     plt.show()
 
 
@@ -85,7 +89,7 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
     while cost > epsilon and iter < max_iters:
 
         # Forward pass
-        x_bar = run_dynamics(u_bar, F, dt, x_init, x_bar, u_deltas)
+        x_bar, u_bar = run_dynamics(u_bar, F, dt, x_init, x_bar, u_deltas)
         u_deltas = []
 
         x_final = x_bar[T]
