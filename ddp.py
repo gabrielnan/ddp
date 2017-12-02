@@ -2,31 +2,8 @@ import autograd.numpy as np
 from autograd import grad
 from autograd import jacobian
 import sys
-import matplotlib.pyplot as plt
 
-
-def run_dynamics(u_old, F, dt, x_init, x_old=None, u_deltas=None):
-    x_new = [x_init]
-    u_new = []
-    x = x_init
-    for t in range(len(u_old)):
-        u = u_old[t]
-        if u_deltas is not None and x_old is not None:
-            x_delta = x - x_old[t]
-            u = u + u_deltas[t](x_delta)
-        x = x + (F(x, u) * dt)
-        u_new.append(u)
-        x_new.append(x)
-    return np.array(x_new), np.array(u_new)
-
-
-def plot_costs(costs, filename='costs'):
-    plt.figure()
-    plt.plot(costs)
-    plt.ylabel('Cost')
-    plt.xlabel('Iteration')
-    plt.savefig(filename)
-    plt.show()
+from util import run_dynamics
 
 
 def get_lagrangians(lagr, dt):
@@ -41,7 +18,7 @@ def get_lagrangians(lagr, dt):
 
 
 def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
-        u_bar=None):
+        gamma=0.1, u_bar=None):
     """Runs Differential Dynamic Programming (DDP)
 
     :param x_init: initial state (np.array)
@@ -53,6 +30,7 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
     :param T: time horizon
     :param max_iters: maximum number of iterations
     :param epsilon: cost error to terminate algorithm
+    :param gamma: rate of control change
     :param u_bar: initial nominal control sequence (if None, random sequence
                   will be used)
     :return: tuple<optimal control sequence, list<costs of one iteration>>
@@ -89,7 +67,7 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
     while cost > epsilon and iter < max_iters:
 
         # Forward pass
-        x_bar, u_bar = run_dynamics(u_bar, F, dt, x_init, x_bar, u_deltas)
+        x_bar, u_bar = run_dynamics(u_bar, system, dt, x_init, x_bar, u_deltas)
         u_deltas = []
 
         x_final = x_bar[T]
@@ -119,11 +97,13 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
             Quu_inv = np.linalg.inv(Quu)
 
             # Compute optimal control change
-            u_delta = lambda x_delta: -Quu_inv @ (Qu + Qxu.T @ x_delta)
-            u_deltas.append(u_delta)
+            c = gamma * (-Quu_inv @ Qu)[np.newaxis].T
+            C = gamma * (-Quu_inv @ Qxu.T)
+            u_delta = np.concatenate([c, C], axis=1)
+            u_deltas.insert(0, u_delta)
 
             # Compute V's at time t
-            V = Q - 0.5 * np.squeeze(Qu[np.newaxis] @ Quu_inv @ Qu)
+            V = Q - 0.5 * Qu @ Quu_inv @ Qu
             Vx = Qx - Qxu @ Quu_inv @ Qu
             Vxx = Qxx - Qxu @ Quu_inv @ Qxu.T
 
@@ -132,4 +112,6 @@ def ddp(x_init, n, m, cost, system, dt=0.001, T=1000, max_iters=50, epsilon=0.0,
         print('\tcost:', cost)
         costs.append(cost)
 
-    return u_bar, costs
+    x_bar, u_bar = run_dynamics(u_bar, system, dt, x_init, x_bar, u_deltas)
+
+    return x_bar, u_bar, costs

@@ -6,7 +6,6 @@ from autograd.numpy import sin, cos
 from matplotlib import animation
 
 from cost import Cost
-from ddp import run_dynamics
 from system import System
 
 
@@ -14,25 +13,28 @@ class CartpoleSystem(System):
     """Cartpole system with constants
     """
 
-    def __init__(self, m_cart, m_ball, length, g=-9.8, x_init=None):
+    def __init__(self, m_cart, m_pole, length, g=-9.8, x_init=None):
         """
         :param m_cart: mass of cart (kg)
-        :param m_ball: mass of ball (kg)
+        :param m_pole: mass of pole (kg)
         :param length: length of pole (m)
         :param g: gravitational acceleration (m / s^2)
         """
         self.x_init = x_init
-        self.m_car = m_cart
-        self.m_ball = m_ball
+        self.m_cart = m_cart
+        self.m_pole = m_pole
         self.length = length
         self.g = g
         self.x_dim = 4
-        self.x_description = ['pos', 'pos_vel', 'theta', 'theta_vel']
+        self.x_names = ['Position',
+                        'Velocity',
+                        'Angle',
+                        'Angular Vel']
 
     def F(self, x, u):
         # Rename system constants for readibility
-        m1 = self.m_car
-        m2 = self.m_ball
+        m1 = self.m_cart
+        m2 = self.m_pole
         l = self.length
         g = self.g
 
@@ -48,32 +50,51 @@ class CartpoleSystem(System):
 
         return np.array([pos_vel, pos_acc, theta_vel, theta_acc])
 
-    def vis(self, u, dt, x_init=None, filename='cartpole', path='vis',
+    def step(self, x, u, dt):
+        x = x + (self.F(x, u) * dt)
+        x[2] %= 2 * np.pi
+        return x
+
+    @staticmethod
+    def x_delta(x1, x2):
+        dx = x1 - x2
+        d_theta = np.mod(dx[2] + np.pi, 2 * np.pi) - np.pi
+        # d_theta = np.arccos(cos(dx[2])
+        return np.array([dx[0], dx[1], d_theta, dx[3]])
+
+    def plot_states(self, x, x_final, path='vis/states', filename='states',
+                    file_ext='png'):
+        fig = plt.figure()
+        for i in range(self.x_dim):
+            ax = fig.add_subplot(4, 1, i + 1)
+            ax.plot(len(x) * [x_final[i]], lw=1)
+            ax.plot(x[:, i], lw=1)
+            ax.set_ylabel(self.x_names[i])
+            ax.set_xlabel('Iterations')
+        fig.show()
+        fig.savefig(os.path.join(path, filename + '.' + file_ext))
+
+    def vis(self, x, dt, filename='cartpole', path='vis/vids',
             file_ext='mp4', show=False):
         """Visualization of cartpole system given control
 
+        :param x: state trajectory
         :param dt: time step
-        :param x_init: initial state
-        :param u: control sequence
         :param file_ext: video file extension
         :param path: video file path
         :param filename: video filename
         :param show: boolean to show animation
         """
-        if x_init is None:
-            if self.x_init is None:
-                raise ValueError('Must provide an initial state')
-            x_init = self.x_init
-
-        x, _ = run_dynamics(u, self.F, dt, x_init)
         cart_pos = np.array([x[:, 0], np.zeros(len(x))]).T
         ball_pos = self.ball_pos(x)
+        x_min = np.min(cart_pos[:, 0])
+        x_max = np.max(cart_pos[:, 0])
 
         # setup figure and animation
         fig = plt.figure()
         ax = fig.add_subplot(111, aspect='equal', autoscale_on=False,
-                             xlim=(-1, 1),
-                             ylim=(-self.length*2, self.length*2))
+                             xlim=(-self.length * 4, self.length * 6),
+                             ylim=(-self.length * 2, self.length * 2))
         ax.grid()
         line, = ax.plot([], [], 'o-', lw=2)
         time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
@@ -96,7 +117,7 @@ class CartpoleSystem(System):
         t1 = time()
         interval = 1000 * dt - (t1 - t0)
 
-        ani = animation.FuncAnimation(fig, animate, frames=len(u),
+        ani = animation.FuncAnimation(fig, animate, frames=len(x),
                                       interval=interval, blit=True,
                                       init_func=init)
         if not os.path.exists(path):
@@ -130,13 +151,11 @@ class CartpoleCost(Cost):
     def phi(self, x):
         Q = self.Q
         dx = self.x_delta(self.x_final, x)
-        return self.terminal_scale * np.squeeze(dx.T @ Q @ dx)
+        return self.terminal_scale * dx @ Q @ dx
 
     @staticmethod
     def x_delta(x1, x2):
         dx = x1 - x2
         d_theta = np.mod(dx[2] + np.pi, 2 * np.pi) - np.pi
         # d_theta = np.arccos(cos(dx[2])
-        return np.array([[dx[0], dx[1], d_theta, dx[3]]]).T
-
-
+        return np.array([dx[0], dx[1], d_theta, dx[3]])
